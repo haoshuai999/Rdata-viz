@@ -1,0 +1,63 @@
+---
+title: "esDataViz"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## esData loading
+
+Before we do any data visualization. Let's first remove some redundant columns from the original dataset.
+```{r removecolumns, include=FALSE}
+# load data into tibble
+load("D:/1VDR/emotion-project/esDataF.Rdata")
+es_tibble <- as_tibble(esDataF)
+
+# remove columns
+es_subset <- es_tibble %>% 
+  select(-ends_with(".low"), -ends_with(".high"))
+```
+
+And we can take a look at the summary of the remaining dataset:
+```{r datasummary}
+summary(es_subset)
+```
+
+## Analyze thoughts
+
+The column mentionedTotal shows the total number of thoughts a user report at one time. Let's see the histogram and boxplot of this column.
+
+```{r pressure, echo=FALSE}
+ggplot(data=es_subset) + 
+  geom_histogram(mapping=aes(x=mentionedTotal), fill="blue", boundary=0, binwidth=1) + 
+  scale_y_log10(name="Number of Rows")
+
+ggplot(data=es_subset) + geom_boxplot(mapping=aes(x=mentionedTotal), fill="blue")
+```
+
+From the histogram and boxplot, we can tell a lot of records have 0 thoughts, so let's filter them out:
+```{r filterzero}
+es_subset <- es_subset %>% 
+  filter(mentionedTotal!=0)
+```
+
+Then, let's sum up each thoughts and visualize which thought gets more attentions:
+```{r sumcolumn, include=FALSE, error=TRUE}
+thoughts <- es_subset %>%
+  select(tFinances,tVices,tWondering,tWorkSchool,tFuture,tHousework,tMundane,tMyHelathWellb,tPast,tPasttimes,tPolReligion,tRegretDisIn,tSocial) %>%
+  colSums(na.rm = TRUE)
+#c("tFinances","tVices","tWondering","tWorkSchool","tFuture","tHousework","tMundane","tMyHelathWellb","tPast","tPasttimes","tPolReligion","tRegretDisIn","tSocial")
+```
+
+```{r visualizesum}
+ggplot(mapping = aes(x = names(thoughts), y = unname(thoughts))) +
+  geom_col(fill="blue") +
+  scale_y_continuous(name = "Number of Rows") +
+  scale_x_discrete(name = "Thoughts") + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
