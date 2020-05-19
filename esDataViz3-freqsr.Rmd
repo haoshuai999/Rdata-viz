@@ -1,0 +1,517 @@
+---
+title: "esDataViz-freqsr"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+## esData loading
+
+Before we do any data visualization. Let's first remove some redundant columns from the original dataset.
+```{r removecolumns}
+# load data into tibble
+load("D:/1VDR/emotion-project/esDataF.Rdata")
+es_tibble <- as_tibble(esDataF)
+
+# remove columns
+es_subset <- es_tibble %>% 
+  select(-ends_with(".low"), -ends_with(".high"), -ends_with(".c"))
+```
+
+## Further preprocess the dataset by removing zero values and grouping by the same participant
+
+```{r groupby, include=FALSE}
+# modify the dataframe by replace 1 with freq.sr
+
+allCols <- c("dErrands","dDIY","dSelfToDo","tHousework","dMakeMoney","dBills","dCantAfford","tFinances","dRehearseLearn","dIdeate","dSchedule","dEducateKids","dCarGoals","dStartB","dIssuesWork","dGetJob","tWorkSchool","dpainfulEvent","dHappyPastEvents","dPastPeriod","dAccomplish","dFunny","tPast","dMistakes","dSecondG","dRelationReg","dUpwardCounter","dMeaning","tRegretDisIn","dLeisure","dNegEvent","dPlausibleNeg","dImplausibleNeg","dPosEvent","dPlausiblePos","dImplausiblePos","tFuture","dLovedOneWellH","dOthersProbs","dOthersSoc","dHowMuchLove","dRomantic","dExPartner","dDeceased","dImageSocial","dThinkOfMe","dFrust","dDislike","tSocial","dInterwork","dFantasy","dDeath","tWondering","dLikeAppear","dFlawedAppearance","dExer","dPersonalGoals","dMyHealth","tMyHelathWellb","dReli","dPoliticsNewSocial","tPolReligion","dVideo","dTvMovie","dWatchSport","dSportPlay","dHobby","dMusic","dShopping","dBook","dMyArt","tPasttimes","dSex","dDrugDrink","tVices","dCommute","dWeather","dFood","dSleep","dDream","tMundane")
+for (Col in allCols){
+  index_list <- which(es_subset[[Col]] == 1)
+  for (index in index_list){
+    es_subset[[Col]][index] <- es_subset$esFreq.sr[index]
+  }
+}
+
+es_subset <- es_subset %>%
+   select(which(sapply(.,class)=="numeric"),turkID)
+
+temp_groupby0 <- es_subset %>%
+  group_by(turkID) %>%
+  summarise_each(funs(mean(., na.rm = TRUE)), avgSleeo:freqPreSurvey)
+temp_groupby1 <- es_subset %>%
+  group_by(turkID) %>%
+  summarise_each(funs(sum(., na.rm = TRUE)), dErrands:atLeastOnce)
+es_groupby <- inner_join(temp_groupby0, temp_groupby1, by = "turkID")
+```
+
+### And we can take a look at the summary of the remaining dataset:
+```{r datasummary}
+summary(es_groupby)
+```
+
+## Thinking about work and meaning in life (including everybody)
+
+Here I want you to create a new tWork2 variable (instead of tWorkSchool). It should include: 
+dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob 
+
+```{r createtwork, include=FALSE}
+es_groupby <- es_groupby %>%
+  mutate(twork2 = select(es_groupby, c("dRehearseLearn", "dIdeate", "dSchedule", "dCarGoals", "dIssuesWork", "dGetJob")) %>% rowSums(na.rm = TRUE))
+#es_subset$MIL_presence <- as.factor(es_subset$MIL_presence)
+```
+
+Is there any evidence that _thinking about work_ predicts _meaning in life_?
+
+Plot the frequency of thinking about tWork2 by MIL_presence (reporting that one has meaning in life or purpose). 
+
+```{r twork2asy}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(MIL_presence), y = twork2)) +
+  scale_x_discrete(name = "MIL_presence") +
+  theme(axis.text.x = element_text(angle = 90))
+# ggplot(data = es_groupby) +
+#   geom_jitter(mapping = aes(x = MIL_presence, y = twork2))
+ggplot(data = es_groupby, mapping = aes(x = MIL_presence, y = twork2)) +
+  geom_smooth() +
+  geom_jitter()
+# ggplot(data = es_groupby) +
+#   geom_boxplot(mapping = aes(x = factor(MIL_presence), y = twork2))
+```
+
+
+### Make a graph where we had MIL_presence (y-axis) plotted against the frequency of tWork2 (x-axis). Maybe do it as a scatterplot (with trendline). Make sure to jitter the dots. 
+
+```{r twork2asx}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(twork2), y = MIL_presence)) + 
+  scale_x_discrete(name = "twork2")
+
+ggplot(data = es_groupby, mapping = aes(x = twork2, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+Correlate the number of thoughts (x-axis) and the MIL_presence scores (y-axis) for each thought topic (e.g., tWorkSchool, tPastEvent). Might make sense to use the faceting feature so that each thought topic has its own graph. The goal here is to get a sense of whether the relationship between MIL and work thoughts is stronger than the relationship between MIL and other topics.
+
+### Let's first plot the z-scored version of the plots. Scaling every individual thought doesn't make that many differences to the output graph:
+
+```{r otherthoughtMILscale}
+ggplot(data = es_groupby, mapping = aes(x = scale(tFinances), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tVices), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tWondering), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tFuture), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tFinances), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tHousework), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tMundane), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tMyHelathWellb), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPast), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPasttimes), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPolReligion), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tRegretDisIn), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tSocial), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+### Then, we can plot the regular version of the plots:
+
+```{r otherthoughtMIL}
+ggplot(data = es_groupby, mapping = aes(x = tFinances, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tVices, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tWondering, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tFuture, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tFinances, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tHousework, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tMundane, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tMyHelathWellb, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPast, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPasttimes, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPolReligion, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tRegretDisIn, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tSocial, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+### What if we break it down by _specific work thoughts_ and look at the relationship?
+
+Make a graph where we had MIL_presence (y-axis) plotted against each of the specfic thoughts that are related to work. Have thought number of thoguhts on the x-axis and meaning in life on the y-axis. There should be a separate line and different color for each: dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob. Make sure to jitter the dots. 
+
+```{r dasx}
+# dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob
+ggplot(data = es_groupby, mapping = aes(x = dRehearseLearn, y = MIL_presence)) +
+  stat_smooth(method = "gam", formula = y ~ s(x, k = 3), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dIdeate, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dSchedule, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dCarGoals, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dIssuesWork, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dGetJob, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+
+### What if we look at the relationship for thoughts with a _negative valence_ separately from thoughts that are _netural or positive_?
+
+Create a variable for negativeWork thoughts (dIssuesWork, dGetJob) and another for postve/neutral work thoughts (dCarGoals,dRehearseLearn, dIdeate, dSchedule).
+
+Make a graph where we have MIL_presence (y-axis) plotted against negativeWorkThoughts and MIL_presence (y-axis) plotted against neutralPosWorkThoughts. Use a different color for each of the two variables. 
+
+```{r computeextracolumn, include=FALSE}
+es_groupby <- es_groupby %>%
+  mutate(tnegative = select(es_groupby, c("dIssuesWork", "dGetJob")) %>% rowSums(na.rm = TRUE))
+es_groupby <- es_groupby %>%
+  mutate(tneutralpositive = select(es_groupby, c("dRehearseLearn", "dIdeate", "dSchedule", "dCarGoals")) %>% rowSums(na.rm = TRUE))
+```
+
+```{r emotionalx}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(tnegative), y = MIL_presence)) + 
+  scale_x_discrete(name = "tnegative") +
+  ggtitle("Negative thoughts - boxplot")
+
+ggplot(data = es_groupby, mapping = aes(x = tnegative, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter(color="blue") +
+  ggtitle("Negative thoughts - scatter plot")
+
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(tneutralpositive), y = MIL_presence)) + 
+  scale_x_discrete(name = "tneutralpositive") +
+  ggtitle("Neutral or positive thoughts - boxplot")
+
+ggplot(data = es_groupby, mapping = aes(x = tneutralpositive, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter(color="red") +
+  ggtitle("Neutral or positive thoughts - scatter plot")
+```
+
+
+-Other ways to look at this data?
+--For instance, you could bin people into those who never think about work vs those who think about it a lot (using 10 bins/levels) and make a histogram where y-axis is avg MIL_presence in that group
+
+```{r thinkwork, include=FALSE}
+es_nowork <- filter(es_groupby, twork2==0)
+es_work <- filter(es_groupby, twork2!=0)
+```
+
+```{r worknowork}
+ggplot(data=es_work) +
+  geom_histogram(mapping = aes(x=MIL_presence), fill="red", binwidth = 1) +
+  scale_y_continuous(name = "Number of People") +
+  ggtitle("People who think about work")
+
+ggplot(data=es_nowork) +
+  geom_histogram(mapping = aes(x=MIL_presence), fill="blue", binwidth = 1) +
+  scale_y_continuous(name = "Number of People") +
+  ggtitle("People who never think about work")
+```
+
+
+# Thinking about work and meaning in life (including only pepole who have a job)
+Repeat all the steps above but this time I want only the people who work.
+
+To do this, you'll want to filter using people who give the following responses to employ (part-time, full-time, self employed)
+  filter(employ==1|employ==2|employ==8)
+  
+## Preprocess the dataset again
+
+```{r groupby2, include=FALSE}
+es_subset <- es_tibble %>% 
+  select(-ends_with(".low"), -ends_with(".high"), -ends_with(".c")) %>%
+  filter(employ==1|employ==2|employ==8)
+es_subset <- es_subset %>% 
+  filter(mentionedTotal!=0)
+es_subset <- es_subset %>%
+   select(which(sapply(.,class)=="numeric"),turkID)
+
+for (Col in allCols){
+  index_list <- which(es_subset[[Col]] == 1)
+  for (index in index_list){
+    es_subset[[Col]][index] <- es_subset$esFreq.sr[index]
+  }
+}
+
+temp_groupby0 <- es_subset %>% 
+  group_by(turkID) %>% 
+  summarise_each(funs(mean(., na.rm = TRUE)), avgSleeo:freqPreSurvey)
+temp_groupby1 <- es_subset %>% 
+  group_by(turkID) %>% 
+  summarise_each(funs(sum(., na.rm = TRUE)), dErrands:atLeastOnce)
+es_groupby <- inner_join(temp_groupby0, temp_groupby1, by = "turkID")
+```
+
+And we can take a look at the summary of the remaining dataset:
+```{r datasummary2}
+summary(es_groupby)
+```
+
+## Thinking about work and meaning in life (including everybody)
+
+Here I want you to create a new tWork2 variable (instead of tWorkSchool). It should include: 
+dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob 
+
+```{r createtwork2, include=FALSE}
+es_groupby <- es_groupby %>%
+  mutate(twork2 = select(es_groupby, c("dRehearseLearn", "dIdeate", "dSchedule", "dCarGoals", "dIssuesWork", "dGetJob")) %>% rowSums(na.rm = TRUE))
+```
+
+Is there any evidence that _thinking about work_ predicts _meaning in life_?
+
+Plot the frequency of thinking about tWork2 by MIL_presence (reporting that one has meaning in life or purpose). 
+
+```{r twork2asy2}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(MIL_presence), y = twork2)) +
+  scale_x_discrete(name = "MIL_presence") +
+  theme(axis.text.x = element_text(angle = 90))
+ggplot(data = es_groupby, mapping = aes(x = MIL_presence, y = twork2)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+### Make a graph where we had MIL_presence (y-axis) plotted against the frequency of tWork2 (x-axis). Maybe do it as a scatterplot (with trendline). Make sure to jitter the dots. 
+
+```{r twork2asx2}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(twork2), y = MIL_presence)) + 
+  scale_x_discrete(name = "twork2")
+
+ggplot(data = es_groupby, mapping = aes(x = twork2, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+Correlate the number of thoughts (x-axis) and the MIL_presence scores (y-axis) for each thought topic (e.g., tWorkSchool, tPastEvent). Might make sense to use the faceting feature so that each thought topic has its own graph. The goal here is to get a sense of whether the relationship between MIL and work thoughts is stronger than the relationship between MIL and other topics.
+
+### Let's first plot the z-scored version of the plots. Scaling every individual thought doesn't make that many differences to the output graph:
+
+```{r otherthoughtMILscale2}
+ggplot(data = es_groupby, mapping = aes(x = scale(tFinances), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tVices), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tWondering), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tFuture), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tFinances), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tHousework), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tMundane), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tMyHelathWellb), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPast), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPasttimes), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tPolReligion), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tRegretDisIn), y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = scale(tSocial), y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+### Then, we can plot the regular version of the plots:
+
+```{r otherthoughtMIL2}
+ggplot(data = es_groupby, mapping = aes(x = tFinances, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tVices, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tWondering, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tFuture, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tFinances, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tHousework, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tMundane, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tMyHelathWellb, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPast, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPasttimes, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tPolReligion, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tRegretDisIn, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = tSocial, y = MIL_presence)) +
+  geom_smooth() +
+  geom_jitter()
+```
+
+### What if we break it down by _specific work thoughts_ and look at the relationship?
+
+Make a graph where we had MIL_presence (y-axis) plotted against each of the specfic thoughts that are related to work. Have thought number of thoguhts on the x-axis and meaning in life on the y-axis. There should be a separate line and different color for each: dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob. Make sure to jitter the dots. 
+
+```{r dasx2}
+# dRehearseLearn, dIdeate, dSchedule, dCarGoals, dIssuesWork, dGetJob
+ggplot(data = es_groupby, mapping = aes(x = dRehearseLearn, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dIdeate, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dSchedule, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dCarGoals, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dIssuesWork, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+ggplot(data = es_groupby, mapping = aes(x = dGetJob, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter()
+```
+
+
+### What if we look at the relationship for thoughts with a _negative valence_ separately from thoughts that are _netural or positive_?
+
+Create a variable for negativeWork thoughts (dIssuesWork, dGetJob) and another for postve/neutral work thoughts (dCarGoals,dRehearseLearn, dIdeate, dSchedule).
+
+Make a graph where we have MIL_presence (y-axis) plotted against negativeWorkThoughts and MIL_presence (y-axis) plotted against neutralPosWorkThoughts. Use a different color for each of the two variables. 
+
+```{r computeextracolumn2, include=FALSE}
+es_groupby <- es_groupby %>%
+  mutate(tnegative = select(es_groupby, c("dIssuesWork", "dGetJob")) %>% rowSums(na.rm = TRUE))
+es_groupby <- es_groupby %>%
+  mutate(tneutralpositive = select(es_groupby, c("dRehearseLearn", "dIdeate", "dSchedule", "dCarGoals")) %>% rowSums(na.rm = TRUE))
+```
+
+```{r emotionalx2}
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(tnegative), y = MIL_presence)) + 
+  scale_x_discrete(name = "tnegative") +
+  ggtitle("Negative thoughts - boxplot")
+
+ggplot(data = es_groupby, mapping = aes(x = tnegative, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter(color="blue") +
+  ggtitle("Negative thoughts - scatter plot")
+
+ggplot(data = es_groupby) +
+  geom_boxplot(mapping = aes(x = factor(tneutralpositive), y = MIL_presence)) + 
+  scale_x_discrete(name = "tneutralpositive") +
+  ggtitle("Neutral or positive thoughts - boxplot")
+
+ggplot(data = es_groupby, mapping = aes(x = tneutralpositive, y = MIL_presence)) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 1) +
+  geom_jitter(color="red") +
+  ggtitle("Neutral or positive thoughts - scatter plot")
+```
+
+
+-Other ways to look at this data?
+--For instance, you could bin people into those who never think about work vs those who think about it a lot (using 10 bins/levels) and make a histogram where y-axis is avg MIL_presence in that group
+
+```{r thinkwork2, include=FALSE}
+es_nowork <- filter(es_groupby, twork2==0)
+es_work <- filter(es_groupby, twork2!=0)
+```
+
+```{r worknowork2}
+ggplot(data=es_work) +
+  geom_histogram(mapping = aes(x=MIL_presence), fill="red", binwidth = 1) +
+  scale_y_continuous(name = "Number of People") +
+  ggtitle("People who think about work")
+
+ggplot(data=es_nowork) +
+  geom_histogram(mapping = aes(x=MIL_presence), fill="blue", binwidth = 1) +
+  scale_y_continuous(name = "Number of People") +
+  ggtitle("People who never think about work")
+```
+
+
